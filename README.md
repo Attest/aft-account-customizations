@@ -1,85 +1,62 @@
-# Learn Terraform - Use Control Tower Account Factory for Terraform
+# aft-account-customizations
 
-This is a companion repository for the Hashicorp [Provision and Manage Accounts with
-Control Tower Account Factory for Terraform
-tutorial](https://developer.hashicorp.com/terraform/tutorials/aws/aws-control-tower-aft).
+AWS Account Factory for Terraform (AFT) account customizations for Attest. Each top-level directory corresponds to an account (or account group) and contains Terraform configs and API helper scripts that AFT executes during account provisioning.
 
-This repository contains boilerplate configuration for defining account
-customizations to use with the Account Factory for Terraform
-module. The README below and the template files in this repository were
-provided by AWS.
-
-To create your account customizations, replicate this repository
-and extend the Terraform configuration.
-
-## Introduction
-This repo stores the Terraform and API helpers for the Account Customizations.
-Account Customizations are used to customize all provisioned accounts with
-customer defined resources. The resources can be created through Terraform or
-through Python, leveraging the API helpers. The customization run is
-parameterized at runtime.
-
-## Usage
-To create an account specific baseline, copy the ACCOUNT_TEMPLATE folder into a
-new folder. The new folder name should be the account ID you wish to baseline.
-
-## Usage
-To leverage Account Customizations, start by copying the ACCOUNT_TEMPLATE
-folder into a new folder. The new folder name should match the
-```account_customizations_name``` provided in the account request for the
-accounts you would like to baseline. Then, populate the target folder as per
-the instructions below.
-
-### Terraform
-
-AFT provides Jinja templates for Terraform backend and providers. These render
-at the time Terraform is applied. If needed, additional providers can be
-defined by creating a providers.tf file.
-
-To create Terraform resources, provide your own Terraform files (ex. main.tf,
-variables.tf, etc) with the resources you would like to create, placing them in
-the 'terraform' directory.
-
-### API Helpers
-
-The purpose of API helpers is to perform actions that cannot be performed
-within Terraform.
-
-#### Python
-
-The api_helpers/python folder contains a requirements.txt, where you can
-specify libraries/packages to be installed via PIP.
-
-#### Bash
-
-This is where you define what runs before/after Terraform, as well as the order
-the Python scripts execute, along with any command line parameters. These bash
-scripts can be extended to perform other actions, such as leveraging the AWS
-CLI or performing additional/custom Bash scripting.
-
-- pre-api-helpers.sh - Actions to execute prior to running Terraform.
-- post-api-helpers.sh - Actions to execute after running Terraform.
-
-#### Sample api-helpers.sh
-
-Sample #1 - Using AWS CLI to query for resources, save to a variable, and then
-pass to a script. In the example below, all running instances are queried,
-stopped, and started using AWS CLI and custom Python scritpts.
+## Repository Structure
 
 ```
-instances=$(aws ec2 describe-instances --filters "Name=instance-state-name,Values=running")
-python ./python/source/stop_instances.py --instances $instances
-sleep 10s
-python ./python/source/start_instances.py --instances $instances
+<account-name>/
+  terraform/                 # HCL resources applied to the target account
+    aft-providers.jinja      # AFT-rendered provider config (do not edit)
+    backend.jinja            # AFT-rendered backend config (do not edit)
+    versions.tf              # Provider version constraints
+    *.tf                     # Your custom resources
+  api_helpers/
+    pre-api-helpers.sh       # Runs BEFORE terraform apply
+    post-api-helpers.sh      # Runs AFTER terraform apply
+    python/
+      requirements.txt       # pip dependencies for helper scripts
 ```
 
-Sample #2 - Query a 3rd party IPAM solution, and save the given CIDR to AWS
-Parameter Store. This SSM parameter could be leveraged from Terraform using a
-data object to create a VPC.
+## Current Account Customizations
 
-```
-account = $(aws sts get-caller-identity --query Account --output text)
-region = $(aws ec2 describe-availability-zones --query 'AvailabilityZones[0].[RegionName]' --output text)
-cidr = $(python ./python/source/get_cidr_range.py)
-aws ssm put-parameter --name /$account/$region/vpc/cidr --value $cidr
-```
+| Folder | Purpose | Resources |
+|--------|---------|-----------|
+| `sandbox/` | Sandbox account baseline | S3 bucket (`aft-sandbox-{account_id}`) |
+| `shared-services/` | Shared-services account baseline | None (data source only) |
+
+## Adding a New Account Customization
+
+1. Copy an existing folder (e.g. `sandbox/`) to a new directory.
+2. Name the directory to match the `account_customizations_name` in the AFT account request.
+3. Keep `aft-providers.jinja` and `backend.jinja` unchanged -- AFT renders these at apply time.
+4. Add your Terraform resources in the `terraform/` directory.
+5. Add pre/post automation in `api_helpers/` if needed.
+
+## How It Works
+
+This repo is consumed by **AWS Control Tower Account Factory for Terraform (AFT)**. When an account is provisioned or updated:
+
+1. AFT CodePipeline picks up this repo.
+2. Jinja templates are rendered into `providers.tf` and `backend.tf`.
+3. `pre-api-helpers.sh` runs.
+4. `terraform init && terraform apply` runs.
+5. `post-api-helpers.sh` runs.
+
+There is no local `terraform apply` -- all execution happens in the AFT pipeline (AWS CodePipeline / CodeBuild).
+
+## Tech Stack
+
+- **IaC:** Terraform (HCL), AWS provider `~> 3.0`
+- **Templating:** Jinja2 (rendered by AFT at apply time)
+- **Scripting:** Bash, Python (API helpers)
+- **Platform:** AWS Control Tower + AFT
+
+## Related Repositories
+
+<!-- TODO: human please fill in -->
+
+## Documentation
+
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) -- system architecture and design decisions
+- [AGENTS.md](AGENTS.md) -- contributor and AI-agent guidelines
